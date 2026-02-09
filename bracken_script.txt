@@ -1,0 +1,64 @@
+##Load packages
+library(tidyverse)
+library(ggplot2)
+
+#------------------------------------------------------------
+# 1. Read all Bracken files
+#------------------------------------------------------------
+# Put all your *.bracken files in one folder
+path <- "D:/oncho_mf_kraken_output/bracken/"   # <-- change to your directory
+
+files <- list.files(path, pattern = "\\.bracken\\.txt$", full.names = TRUE)
+
+# Read all into one long dataframe
+bracken <- files %>%
+  setNames(basename(.)) %>%
+  map_df(~ read.table(.x, header = TRUE, sep = "\t", quote = "", comment.char = ""),
+         .id = "sample") %>%
+  mutate(sample = gsub("\\.bracken\\.txt$", "", sample))
+
+#------------------------------------------------------------
+# 2. Clean names (remove unclassified + human)
+#------------------------------------------------------------
+bracken_clean <- bracken %>%
+  filter(!grepl("unclassified", name, ignore.case = TRUE)) %>%
+  filter(!grepl("Homo sapiens|human", name, ignore.case = TRUE))
+
+#------------------------------------------------------------
+# 3. Use relative abundance from Bracken
+#------------------------------------------------------------
+# Bracken already gives fraction_total_reads = relative abundance
+bracken_rel <- bracken_clean %>%
+  mutate(rel_abundance = fraction_total_reads)
+
+#------------------------------------------------------------
+# 4. Keep top N taxa (across all samples)
+#------------------------------------------------------------
+TOP_N <- 10  # choose how many to show
+
+top_taxa <- bracken_rel %>%
+  group_by(name) %>%
+  summarise(total = sum(rel_abundance)) %>%
+  arrange(desc(total)) %>%
+  slice(1:TOP_N) %>%
+  pull(name)
+
+bracken_plot <- bracken_rel %>%
+  mutate(name = ifelse(name %in% top_taxa, name, "Other"))
+
+#------------------------------------------------------------
+# 5. Plot stacked barplot
+#------------------------------------------------------------
+windows()
+ggplot(bracken_plot, aes(x = sample, y = rel_abundance, fill = name)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    title = "Relative Abundance (Bracken Species Level)",
+    x = "Sample",
+    y = "Relative Abundance (%)",
+    fill = "Species"
+  )
+
